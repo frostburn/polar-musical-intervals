@@ -1,0 +1,203 @@
+<!doctype html>
+<html>
+<body style="margin:0;">
+<canvas id="main-canvas" width="1920" height="1076"></canvas>
+<script type="text/javascript">
+    const EPSILON = 1e-6;
+    let maxMultiplier = 10;
+    let pureMode = false;
+
+    let mainChordUnfiddled = [1, Math.pow(2, 4/12), Math.pow(2, 7/12)];
+    let mainChord;
+
+    function setMainChord() {
+        mainChord = fiddleIntervals(mainChordUnfiddled);
+        if (pureMode) {
+            mainChord = mainChord.map(i => i + Math.random()*0.001);
+            mainChord = nudgeIntervals(mainChord);
+        }
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if (e.code.startsWith('Digit')) {
+            maxMultiplier = 10 + parseInt(e.code[5]);
+            setMainChord();
+        }
+        if (e.code == 'KeyP') {
+            pureMode = !pureMode;
+            setMainChord();
+        }
+    });
+
+    function pureError(intervals) {
+        let error = 0;
+        for (let i of intervals) {
+            error += Math.abs(Math.log(i) - Math.log(Math.round(i)));
+        }
+        return error;
+    }
+
+    // Balance out the "movement" of a group of notes.
+    function nudgeIntervals(intervals) {
+        let correction = 1;
+        for (let i of intervals) {
+            correction *= i / Math.round(i);
+        }
+        return intervals.map(i => i * Math.pow(correction, -1 / intervals.length));
+    }
+
+    // Try to find the least "moving" representation of a group of notes.
+    // If the none of the intervals is an integer this may produce weird results.
+    function fiddleIntervals(intervals) {
+        let bestError = Infinity;
+        let best = intervals;
+        for (let multiplier = 1; multiplier < maxMultiplier+1; multiplier++) {
+            const fiddled = nudgeIntervals(intervals.map(i => i * multiplier));
+            const error = pureError(fiddled);
+            if (error + EPSILON < bestError) {
+                bestError = error;
+                best = fiddled;
+            }
+        }
+        if (pureMode) {
+            return nudgeIntervals(best.map(i => Math.round(i)));
+        }
+        return best;
+    }
+
+    let prevX = -1;
+    let prevY = -1;
+    setMainChord();
+
+    document.addEventListener('mousemove', (e) => {
+        if (e.clientX > 1080) {
+            let x = (e.clientX - 1076) / (1920 - 1080);
+            x = Math.floor(11*x);
+            let y = e.clientY / (1920 - 1080);
+            y = Math.floor(11*y);
+            if (y >= x && (x != prevX || y != prevY)) {
+                prevX = x;
+                prevY = y;
+                mainChordUnfiddled = [1, Math.pow(2, (x+1)/12), Math.pow(2, (y+2)/12)];
+                setMainChord();
+            }
+        }
+    });
+
+    const strokeStyles = ["#220203", "#022203", "#010133", "#201502", "#200220", "#032223"];
+    const sumStrokeStyle = "#160621";
+
+    const mainCanvas = document.getElementById("main-canvas");
+    const ctx = mainCanvas.getContext("2d");
+
+    function leftSideView() {
+        ctx.translate(mainCanvas.height/2, mainCanvas.height/2);
+        ctx.scale(0.5*mainCanvas.height, 0.5*mainCanvas.height);
+        ctx.lineWidth = 5/mainCanvas.height;
+    }
+
+    function rightSideBox(x, y, width) {
+        const delta = mainCanvas.height*0.77 / width;
+        ctx.translate(mainCanvas.height + (x+0.5)*delta, (y+.5)*delta);
+        ctx.scale(delta, delta);
+        ctx.lineWidth = 3/mainCanvas.height;
+    }
+
+    let mainOffset = 0;
+    let boxOffset = 0;
+    let accuracy = 1000;
+    const arcLenght = Math.PI * 2;
+
+
+    function drawChord(chord, drawSum=true, offset) {
+        const mu = arcLenght / accuracy;
+
+        let n = 0;
+        for (let interval of chord) {
+            ctx.beginPath();
+            for (let i = 0; i < accuracy + 1; i++) {
+                const theta = i * mu + offset;
+                let r = Math.pow(Math.cos(interval * theta), 9);
+                r = 0.05 * (4 + 2.2*n + r);
+                const x = Math.cos(theta) * r;
+                const y = Math.sin(theta) * r;
+                if (i == 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            }
+            ctx.strokeStyle = strokeStyles[n];
+            ctx.stroke();
+            n += 1;
+        }
+
+        if (drawSum) {
+            ctx.beginPath();
+            for (let i = 0; i < accuracy + 1; i++) {
+                const theta = i * mu + offset;
+                let r = 0;
+                for (interval of chord) {
+                    r += Math.pow(Math.cos(interval * theta), 9);
+                }
+                r = 0.05 * (7 + 2.2*n + r);
+                const x = Math.cos(theta) * r;
+                const y = Math.sin(theta) * r;
+                if (i == 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            }
+            ctx.strokeStyle = sumStrokeStyle;
+            ctx.stroke();
+        }
+    }
+
+
+    ctx.save();
+    let iteration = 0;
+    function update() {
+        ctx.restore();
+        ctx.save();
+        // if (iteration % 100 == -1) {
+        //     ctx.globalCompositeOperation = "lighter";
+        //     ctx.fillStyle = "rgba(255,255,255,0.001)";
+        // } else {
+        ctx.fillStyle = "rgba(255,255,255,0.4)";
+        //}
+        ctx.fillRect(0,0,mainCanvas.height,mainCanvas.height);
+        if (iteration % 3 == 0) {
+            ctx.fillStyle = "rgba(255,255,255,0.3)";
+            ctx.fillRect(mainCanvas.height,0, mainCanvas.height, mainCanvas.height);
+        }
+        ctx.globalCompositeOperation = "source-over";
+
+        accuracy = 2000;
+        leftSideView();
+        drawChord(mainChord, true, mainOffset);
+        ctx.restore();
+        ctx.save();
+
+        if (iteration % 3 == 0) {
+            accuracy = 200;
+            for (let b = 1; b < 12; b++) {
+                for (let c = b+1; c < 16; c++) {
+                    rightSideBox(b-1, c-2, 11);
+                    const chord = fiddleIntervals([1, Math.pow(2, b/12), Math.pow(2, c/12)]);
+                    drawChord(chord, false, boxOffset);
+                    ctx.restore();
+                    ctx.save();
+                }
+            }
+            boxOffset += arcLenght;
+        }
+
+        mainOffset += arcLenght;
+        iteration += 1;
+    }
+
+    window.setInterval(update, 1000 / 100);
+</script>
+</body>
+</html>
