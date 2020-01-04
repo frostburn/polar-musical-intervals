@@ -18,20 +18,23 @@
     let mainChord;
 
     document.addEventListener('keydown', (e) => {
-        if (e.code.startsWith('Digit')) {
-            maxMultiplier = 10 + parseInt(e.code[5]);
-            setMainChord();
+        if (e.code.startsWith('Numpad')) {
+            let value = parseInt(e.code[6]);
+            if (!isNaN(value)) {
+                maxMultiplier = 10 + value;
+                setMainChord();
+            }
         }
-        if (e.code == 'KeyP') {
+        if (e.code == 'Backspace') {
             pureMode = !pureMode;
             setMainChord();
         }
-        if (e.code == 'KeyB') {
-            base *= 1.00005;
-            setMainChord();
-        }
-        if (e.code == 'KeyV') {
-            base /= 1.00005;
+        if (e.code == 'Backslash') {
+            if (e.shiftKey) {
+                base /= 1.00005;
+            } else {
+                base *= 1.00005;
+            }
             setMainChord();
         }
         if (e.code == 'NumpadMultiply') {
@@ -54,18 +57,17 @@
             prevY -= 12;
             setMainChord();
         }
-        if (e.code == 'KeyR') {
+        if (e.code == 'Insert') {
             randomLevel += 0.001;
             setMainChord();
         }
-        if (e.code == 'KeyE') {
+        if (e.code == 'Delete') {
             randomLevel -= 0.001;
             if (randomLevel < 0) {
                 randomLevel = 0;
             }
             setMainChord();
         }
-        // TODO: Trigger mainChord recalculation on offset change
     });
 
     document.addEventListener('mousedown', (e) => {
@@ -192,20 +194,20 @@
     INTERVAL_COLORS = {
         0: "#555555",
         1: "#223311",
-        2: "#330000",
+        2: "#440000",
         3: "#220033",
         4: "#665500",
         5: "#005500",
         6: "#000000",
         7: "#000066",
-        8: "#221133",
+        8: "#331177",
         9: "#334422",
-        10: "#002233",
-        11: "#331122",
+        10: "#003344",
+        11: "#112200",
     };
     function getIntervalNameAndColor(interval) {
         let shift = 0;
-        for (let i = 0; i < 10; ++i) {
+        for (let i = 0; i < 20; ++i) {
             const name = INTERVALS[interval];
             if (name !== undefined) {
                 const color = INTERVAL_COLORS[interval];
@@ -290,6 +292,7 @@
 
     function drawStatus() {
         ctx.font = "30px Arial";
+        // Yay! Fade fixes!
         ctx.fillStyle = "#FFFFFF";
         ctx.fillRect(0, 0, 400, 90);
         ctx.fillRect(0, 0, 350, 130);
@@ -418,7 +421,7 @@
     window.setInterval(update, 1000 / 60);
 
 
-    const audioCtx = new AudioContext();
+    const audioCtx = new AudioContext({latencyHint: "interactive"});
     audioCtx.suspend();
 
     const DT = 1 / audioCtx.sampleRate;
@@ -463,56 +466,140 @@
         if (note === undefined) {
             note = Math.floor(Math.random()*5)-2;
         }
-        return Math.pow(base, Math.round(pitch) + note - rootFix) * 220;
+        return Math.pow(base, Math.round(pitch) + note - rootFix) * 164.81;
     }
 
     const oscillator = audioCtx.createOscillator();
     oscillator.type = 'triangle';
     const gain = audioCtx.createGain();
-    gain.gain.setValueAtTime(0, audioCtx.currentTime);
     oscillator.connect(gain).connect(audioCtx.destination);
     oscillator.start();
+    gain.gain.setValueAtTime(0, audioCtx.currentTime);
 
     const buzzers = [];
     const buzzPreGain = audioCtx.createGain();
-    buzzPreGain.gain.setValueAtTime(0, audioCtx.currentTime);
     const buzzPostGain = audioCtx.createGain();
-    buzzPostGain.gain.setValueAtTime(0, audioCtx.currentTime);
 
     const sigmoidDistortion = audioCtx.createWaveShaper();
     sigmoidDistortion.curve = makeSigmoidCurve();
     sigmoidDistortion.oversample = '4x';
     buzzPreGain.connect(sigmoidDistortion).connect(buzzPostGain).connect(audioCtx.destination);
+    buzzPreGain.gain.setValueAtTime(0, audioCtx.currentTime);
+    buzzPostGain.gain.setValueAtTime(0, audioCtx.currentTime);
     for (let i = 0; i < mainChord.length; ++i) {
         const buzzer = audioCtx.createOscillator();
-        buzzer.setPeriodicWave(softBuzz);
+        buzzers.push(buzzer);
+        buzzer.setPeriodicWave(buzz);
         buzzer.connect(buzzPreGain);
         buzzer.start();
-        buzzers.push(buzzer);
+        buzzer.frequency.setValueAtTime(0, audioCtx.currentTime);
     }
 
     PITCHES = {
-        KeyA: 0,
-        KeyS: 1,
-        KeyD: 2,
-        KeyF: 3,
-        KeyG: 4,
-        KeyH: 5,
-        KeyJ: 6,
-        KeyK: 7,
-        KeyL: 8,
-        Semicolon: 9,
-        Quote: 10,
-        Backslash: 11,
+        IntlBackslash: 0,
+        KeyA: 1,
+        KeyZ: 2,
+        KeyS: 3,
+        KeyX: 4,
+        KeyC: 5,
+        KeyF: 6,
+        KeyV: 7,
+        KeyG: 8,
+        KeyB: 9,
+        KeyH: 10,
+        KeyN: 11,
+        KeyM: 12,
+        KeyK: 13,
+        Comma: 14,
+        KeyL: 15,
+        Period: 16,
+        Slash: 17,
+
+        KeyQ: 12,
+        Digit2: 13,
+        KeyW: 14,
+        Digit3: 15,
+        KeyE: 16,
+        KeyR: 17,
+        Digit5: 18,
+        KeyT: 19,
+        Digit6: 20,
+        KeyY: 21,
+        Digit7: 22,
+        KeyU: 23,
+        KeyI: 24,
+        Digit9: 25,
+        KeyO: 26,
+        Digit0: 27,
+        KeyP: 28,
+        BracketLeft: 29,
     };
+
+    let pressedKeys = [];
+    let firstKeyPress = true;
+
+    function setBuzzers(e) {
+        setMainChord();
+        let freq = findBaseFrequency(PITCHES[e.code]);
+        let preGain, postGain, wave;
+        preGain = 0.001;
+        postGain = 40;
+        wave = buzz;
+        if (e.shiftKey || e.getModifierState("CapsLock")) {
+            preGain = 0.9;
+            postGain = 0.2;
+            wave = softBuzz;
+        }
+        if (e.shiftKey && e.getModifierState("CapsLock")) {
+            preGain = 2.0;
+            postGain = 0.2;
+            wave = softerBuzz;
+        }
+
+        for (let i = 0; i < mainChord.length; ++i) {
+            const buzzer = buzzers[i];
+            buzzer.setPeriodicWave(wave);
+            buzzer.frequency.cancelScheduledValues(audioCtx.currentTime);
+            let time;
+            if (pressedKeys.length > 1) {
+                buzzer.frequency.setValueAtTime(buzzer.frequency.value, audioCtx.currentTime);
+                buzzer.frequency.exponentialRampToValueAtTime(freq * mainChord[i], audioCtx.currentTime + 0.025);
+            } else {
+                buzzer.frequency.setValueAtTime(freq * mainChord[i], audioCtx.currentTime);
+            }
+        }
+
+        let preVal, postVal;
+        if (firstKeyPress) {
+            preVal = 0;
+            postVal = 0;
+            firstKeyPress = false;
+        } else {
+            preVal = buzzPreGain.gain.value;
+            postVal = buzzPostGain.gain.value;
+        }
+
+        buzzPreGain.gain.cancelScheduledValues(audioCtx.currentTime);
+        buzzPreGain.gain.setValueAtTime(preVal, audioCtx.currentTime);
+        buzzPreGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.005);
+        buzzPreGain.gain.linearRampToValueAtTime(preGain, audioCtx.currentTime + 0.01);
+
+        buzzPostGain.gain.cancelScheduledValues(audioCtx.currentTime);
+        buzzPostGain.gain.setValueAtTime(postVal, audioCtx.currentTime);
+        buzzPostGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.005);
+        buzzPostGain.gain.linearRampToValueAtTime(postGain, audioCtx.currentTime + 0.01);
+    }
 
     document.addEventListener('keydown', e => {
         audioCtx.resume();  // Thanks Chrome!
-        if (e.code == 'KeyQ') {
+
+        console.log(e);
+
+        if (e.code == 'Backquote') {
             oscillator.frequency.cancelScheduledValues(audioCtx.currentTime);
             gain.gain.cancelScheduledValues(audioCtx.currentTime);
 
-            const freq = findBaseFrequency();
+            const freq = findBaseFrequency() * 2;
             oscillator.frequency.setValueAtTime(freq * mainChord[0], audioCtx.currentTime);
             oscillator.frequency.setValueAtTime(freq * mainChord[1], audioCtx.currentTime + 1);
             oscillator.frequency.setValueAtTime(freq * mainChord[2], audioCtx.currentTime + 2);
@@ -523,42 +610,50 @@
             gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 3.02);
         }
 
-        if (PITCHES[e.code] !== undefined || e.code == 'KeyW') {
-            let freq = findBaseFrequency(PITCHES[e.code]);
-            let preGain, postGain, wave;
-            if (e.shiftKey ^ e.getModifierState("CapsLock")) {
-                preGain = 1;
-                postGain = 0.2;
-                wave = softBuzz;
-            } else {
-                preGain = 0.001;
-                postGain = 40;
-                wave = buzz;
+        if (PITCHES[e.code] !== undefined) {
+            if (pressedKeys.includes(e.code)) {
+                return;
             }
-            if (e.code == 'KeyW') {
-                preGain = 0.5;
-                postGain = 0.2;
-                freq *= 3;
-                wave = softerBuzz;
-            }
+            pressedKeys.unshift(e.code);
 
-            for (let i = 0; i < mainChord.length; ++i) {
-                const buzzer = buzzers[i];
-                buzzer.setPeriodicWave(wave);
-                buzzer.frequency.cancelScheduledValues(audioCtx.currentTime);
-                buzzer.frequency.setValueAtTime(freq * mainChord[i], audioCtx.currentTime);
-            }
-
-            buzzPreGain.gain.cancelScheduledValues(audioCtx.currentTime);
-            buzzPreGain.gain.setValueAtTime(0, audioCtx.currentTime);
-            buzzPreGain.gain.linearRampToValueAtTime(preGain, audioCtx.currentTime + 0.01);
-            buzzPreGain.gain.setValueAtTime(preGain, audioCtx.currentTime + 2);
-            buzzPreGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 2.3);
-
-            buzzPostGain.gain.cancelScheduledValues(audioCtx.currentTime);
-            buzzPostGain.gain.setValueAtTime(0, audioCtx.currentTime);
-            buzzPostGain.gain.linearRampToValueAtTime(postGain, audioCtx.currentTime + 0.01);
+            setBuzzers(e);
         }
+
+        // TODO: Fix gain sync issues.
+        // if ((e.code == "ShiftLeft" || e.code == "ShiftRight") && pressedKeys.length) {
+        //     const spoofedEvent = {code: pressedKeys[0], shiftKey: e.shiftKey};
+        //     spoofedEvent.getModifierState = (modifier) => {return e.getModifierState(modifier)};
+        //     setBuzzers(spoofedEvent);
+        // }
+    });
+
+    document.addEventListener('keyup', e => {
+        if (PITCHES[e.code] !== undefined) {
+            let isMostRecent;
+            if (pressedKeys.includes(e.code)) {
+                isMostRecent = (pressedKeys[0] == e.code);
+                pressedKeys.splice(pressedKeys.indexOf(e.code), 1);
+            }
+            if (pressedKeys.length) {
+                if (isMostRecent) {
+                    const spoofedEvent = {code: pressedKeys[0], shiftKey: e.shiftKey};
+                    spoofedEvent.getModifierState = (modifier) => {return e.getModifierState(modifier)};
+                    setBuzzers(spoofedEvent);
+                }
+            }
+            else {
+                buzzPreGain.gain.cancelScheduledValues(audioCtx.currentTime);
+                buzzPreGain.gain.setValueAtTime(buzzPreGain.gain.value, audioCtx.currentTime);
+                buzzPreGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.01);
+            }
+        }
+
+        // TODO: Fix gain sync issues.
+        // if ((e.code == "ShiftLeft" || e.code == "ShiftRight") && pressedKeys.length) {
+        //     const spoofedEvent = {code: pressedKeys[0], shiftKey: e.shiftKey};
+        //     spoofedEvent.getModifierState = (modifier) => {return e.getModifierState(modifier)};
+        //     setBuzzers(spoofedEvent);
+        // }
     })
 </script>
 </body>
