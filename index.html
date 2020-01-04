@@ -10,6 +10,7 @@
     const EPSILON = 1e-6;
     let maxMultiplier = 10;
     let pureMode = false;
+    let slowMode = false;
     let randomLevel = 0;
     let intervalOffset1 = 0;
     let intervalOffset2 = 0;
@@ -58,13 +59,22 @@
             setMainChord();
         }
         if (e.code == 'Insert') {
-            randomLevel += 0.001;
-            setMainChord();
+            slowMode = !slowMode;
+            if (slowMode) {
+                mainArcLength = Math.PI * 0.03;
+            } else {
+                mainArcLength = 2 * Math.PI;
+            }
         }
         if (e.code == 'Delete') {
-            randomLevel -= 0.001;
-            if (randomLevel < 0) {
-                randomLevel = 0;
+            if (e.shiftKey) {
+                randomLevel += 0.001;
+            }
+            else {
+                randomLevel -= 0.001;
+                if (randomLevel < 0) {
+                    randomLevel = 0;
+                }
             }
             setMainChord();
         }
@@ -281,7 +291,7 @@
             const result = getIntervalNameAndColor(intervals[0]);
             return "[" + result.name + "]";
         }
-        if (intervals[0] == 12) {
+        if (intervals[0] == 12  && intervals[1] < 24) {
             const result = getIntervalNameAndColor(intervals[1]-12);
             return "[" + result.name + "]";
         }
@@ -380,7 +390,7 @@
             ctx.fillStyle = "rgba(255,255,255,0.01)";
         } else {
             ctx.globalCompositeOperation = "source-over";
-            ctx.fillStyle = "rgba(255,255,255," + Math.min(0.3, mainArcLength * 0.5) + ")";
+            ctx.fillStyle = "rgba(255,255,255," + Math.min(0.4, mainArcLength * 0.2) + ")";
         }
         ctx.fillRect(0,0,mainCanvas.height,mainCanvas.height);
 
