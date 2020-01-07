@@ -8,6 +8,7 @@
 <script type="text/javascript">
     // TODO: Slowly slide into distortion when a note is playing and shift or capslock is pressed
     // XXX: This requires another set of buzzers to change the waveform.
+    // TODO: Allow polyphonic playing when not hovering over a chord.
     let base = Math.pow(2, 1/12);
     const EPSILON = 1e-6;
     let maxMultiplier = 10;
@@ -41,13 +42,13 @@
             setMainChord();
         }
         if (e.code == 'NumpadMultiply') {
-            intervalOffset1 += 6;
-            prevX += 6;
+            intervalOffset1 += 12;
+            prevX += 12;
             setMainChord();
         }
         if (e.code == 'NumpadDivide' && intervalOffset1 > 0) {
-            intervalOffset1 -= 6;
-            prevX -= 6;
+            intervalOffset1 -= 12;
+            prevX -= 12;
             setMainChord();
         }
         if (e.code == 'NumpadAdd') {
@@ -122,10 +123,16 @@
         return best;
     }
 
+    const rightBoxCount = 12;
     let prevX = 4;
     let prevY = 7;
     function setMainChord() {
-        const mainChordUnfiddled = [1, Math.pow(base, prevX), Math.pow(base, prevY)];
+        let mainChordUnfiddled;
+        if (prevX == prevY) {
+            mainChordUnfiddled = [1, Math.pow(base, prevX)];
+        } else {
+            mainChordUnfiddled = [1, Math.pow(base, prevX), Math.pow(base, prevY)];
+        }
         mainChord = fiddleIntervals(mainChordUnfiddled);
         mainChord = mainChord.map(i => i * Math.exp((Math.random()-0.5)*randomLevel));
         mainChord = nudgeIntervals(mainChord);
@@ -137,18 +144,13 @@
             return;
         }
         if (e.pageX > 1080) {
-            let x = (e.pageX - 1076) / (1920 - 1080);
-            x = Math.floor(11*x) + intervalOffset1 + 1;
+            let x = (e.pageX - leftSideWidth - 4) / (1920 - 1080);
+            x = Math.floor(rightBoxCount*x) + intervalOffset1 + 1;
             let y = e.pageY / (1920 - 1080);
-            y = Math.floor(11*y) + intervalOffset2 + 2;
-            if (y >= x && (x != prevX || y != prevY)) {
+            y = Math.floor(rightBoxCount*y) + intervalOffset2 + 1;
+            if (x != prevX || y != prevY) {
                 prevX = x;
                 prevY = y;
-                setMainChord();
-            }
-            if (y < x && (prevX != 0 || prevY != 0)) {
-                prevX = 0;
-                prevY = 0;
                 setMainChord();
             }
         }
@@ -159,22 +161,26 @@
 
     const mainCanvas = document.getElementById("main-canvas");
     const ctx = mainCanvas.getContext("2d");
+    const leftSideWidth = mainCanvas.height*0.98
 
-    function leftSideView() {
+    function leftSideView(scale=0.5) {
         ctx.translate(mainCanvas.height/2, mainCanvas.height/2);
-        ctx.scale(0.5*mainCanvas.height, 0.5*mainCanvas.height);
-        ctx.lineWidth = 5/mainCanvas.height;
+        ctx.scale(scale*mainCanvas.height, scale*mainCanvas.height);
+        ctx.lineWidth = 4.5/mainCanvas.height;
     }
 
     function rightSideBox(x, y, width) {
-        const delta = mainCanvas.height*0.77 / width;
-        ctx.translate(mainCanvas.height + (x+0.5)*delta, (y+.5)*delta);
+        const delta = mainCanvas.height*0.8 / width;
+        ctx.translate(leftSideWidth + (x+0.5)*delta, (y+.5)*delta);
         ctx.scale(delta, delta);
         ctx.lineWidth = 3/mainCanvas.height;
     }
 
-    let mainOffsets = [0, 0, 0, 0];
+    const MAX_POLYPHONY = 6;
+    let mainPolarOffset = 0;
+    let mainOffsets = Array(MAX_POLYPHONY).fill(0);
     let mainArcLength = Math.PI * 2;
+    let boxPolarOffset = 0;
     let boxOffsets = new Map();
     let accuracy = 1000;
     let boxArcLength = Math.PI * 2;
@@ -183,7 +189,7 @@
         const key = x + "," + y;
         let offsets = boxOffsets.get(key);
         if (offsets === undefined) {
-            offsets = [0, 0, 0, 0];
+            offsets = [0, 0, 0];
             boxOffsets.set(key, offsets);
         }
         return offsets;
@@ -259,7 +265,12 @@
             return name;
         }
     }
-    function getChordName(intervals) {
+    function getChordName(intervals_) {
+        const intervals = [intervals_[0], intervals_[1]];
+        if (intervals[0] > intervals[1]) {
+            intervals[1] = intervals_[0];
+            intervals[0] = intervals_[1];
+        }
         let name = CHORDS[intervals.join(",")];
         if (name !== undefined) {
             return name;
@@ -346,18 +357,19 @@
         textOnWhite("Octave: " + octave, 20, mainCanvas.height - 20);
     }
 
-    function drawChord(chord, arcLength, offsets, drawSum) {
+    function drawChord(chord, arcLength, polarOffset, offsets, drawSum) {
         const mu = arcLength / accuracy;
 
+        const scale = 0.14 / (chord.length + drawSum);
         let n = 0;
         for (let interval of chord) {
             ctx.beginPath();
             for (let i = 0; i < accuracy + 1; i++) {
                 const theta = i * mu;
-                let r = Math.pow(Math.cos(offsets[n+1] + interval * theta), 9);
-                r = 0.05 * (4 + 2.2*n + r);
-                const x = Math.cos(theta + offsets[0]) * r;
-                const y = Math.sin(theta + offsets[0]) * r;
+                let r = Math.pow(Math.cos(offsets[n] + interval * theta), 9);
+                r = scale * (4 + 2.2*n + r);
+                const x = Math.cos(theta + polarOffset) * r;
+                const y = Math.sin(theta + polarOffset) * r;
                 if (i == 0) {
                     ctx.moveTo(x, y);
                 } else {
@@ -375,11 +387,11 @@
                 const theta = i * mu;
                 let r = 0;
                 for (let j = 0; j < chord.length; j++) {
-                    r += Math.pow(Math.cos(offsets[j+1] + chord[j] * theta), 9);
+                    r += Math.pow(Math.cos(offsets[j] + chord[j] * theta), 9);
                 }
-                r = 0.05 * (7 + 2.2*n + r);
-                const x = Math.cos(theta + offsets[0]) * r;
-                const y = Math.sin(theta + offsets[0]) * r;
+                r = scale * (7 + 2.2*chord.length + r);
+                const x = Math.cos(theta + polarOffset) * r;
+                const y = Math.sin(theta + polarOffset) * r;
                 if (i == 0) {
                     ctx.moveTo(x, y);
                 } else {
@@ -403,47 +415,52 @@
             ctx.globalCompositeOperation = "source-over";
             ctx.fillStyle = "rgba(255,255,255," + Math.min(0.4, mainArcLength * 0.2) + ")";
         }
-        ctx.fillRect(0,0,mainCanvas.height,mainCanvas.height);
+        ctx.fillRect(0,0,leftSideWidth,mainCanvas.height);
 
-        if (iteration % 3 == 0) {
+        if (iteration % 4 == 0) {
             ctx.globalCompositeOperation = "source-over";
             ctx.fillStyle = "rgba(255,255,255,0.3)";
-            ctx.fillRect(mainCanvas.height,0, mainCanvas.height, mainCanvas.height);
+            ctx.fillRect(leftSideWidth,0, mainCanvas.height, mainCanvas.height);
         }
         ctx.globalCompositeOperation = "source-over";
 
         drawStatus();
 
         accuracy = 2000;
-        leftSideView();
-        drawChord(mainChord, mainArcLength, mainOffsets, true);
+        leftSideView(0.69);
+        drawChord(mainChord, mainArcLength, mainPolarOffset, mainOffsets, true);
         ctx.restore();
         ctx.save();
 
-        if (iteration % 3 == 0) {
+        if (iteration % 4 == 0) {
             accuracy = 200;
-            for (let b = 1+intervalOffset1; b < 12+intervalOffset1; b++) {
-                for (let c = Math.max(b, 2+intervalOffset2); c < 16+intervalOffset2; c++) {
-                    const x = b - 1 - intervalOffset1;
-                    const y = c - 2 - intervalOffset2;
-                    rightSideBox(x, y, 11);
-                    const chord = fiddleIntervals([1, Math.pow(base, b), Math.pow(base, c)]);
+            for (let x = 0; x < 12; ++x) {
+                for (let y = 0; y < 15; ++y) {
+                    const b = x + 1 + intervalOffset1;
+                    const c = y + 1 + intervalOffset2;
+                    rightSideBox(x, y, 12);
+                    let chord;
+                    if (b == c) {
+                        chord = fiddleIntervals([1, Math.pow(base, b)]);
+                    } else {
+                        chord = fiddleIntervals([1, Math.pow(base, b), Math.pow(base, c)]);
+                    }
                     const offsets = getBoxOffsets(x, y);
-                    drawChord(chord, boxArcLength, offsets, false);
+                    drawChord(chord, boxArcLength, boxPolarOffset, offsets, false);
                     ctx.restore();
                     ctx.save();
 
-                    offsets[0] += boxArcLength;
+                    boxPolarOffset += boxArcLength;
                     for (let i = 0; i < chord.length; ++i) {
-                        offsets[i+1] += chord[i] * boxArcLength;
+                        offsets[i] += chord[i] * boxArcLength;
                     }
                 }
             }
         }
 
-        mainOffsets[0] += mainArcLength;
+        mainPolarOffset += mainArcLength;
         for (let i = 0; i < mainChord.length; ++i) {
-            mainOffsets[i+1] += mainChord[i] * mainArcLength;
+            mainOffsets[i] += mainChord[i] * mainArcLength;
         }
         iteration += 1;
     }
@@ -489,7 +506,11 @@
     }
 
     function findBaseFrequency(note) {
-        const freq = Math.pow(mainChord[0] * mainChord[1] * mainChord[2], -1/3);
+        let product = 1;
+        for (let interval of mainChord) {
+            product *= interval;
+        }
+        const freq = Math.pow(product, -1/mainChord.length);
         const pitch = Math.log(freq) / Math.log(base);
         let rootFix = Math.log(mainChord[0]) / Math.log(base);
         rootFix -= Math.round(rootFix);
@@ -507,6 +528,7 @@
     gain.gain.setValueAtTime(0, audioCtx.currentTime);
 
     const buzzers = [];
+    const buzzGains = [];
     const buzzPreGain = audioCtx.createGain();
     const buzzPostGain = audioCtx.createGain();
 
@@ -516,13 +538,16 @@
     buzzPreGain.connect(sigmoidDistortion).connect(buzzPostGain).connect(audioCtx.destination);
     buzzPreGain.gain.setValueAtTime(0, audioCtx.currentTime);
     buzzPostGain.gain.setValueAtTime(0, audioCtx.currentTime);
-    for (let i = 0; i < mainChord.length; ++i) {
+    for (let i = 0; i < MAX_POLYPHONY; ++i) {
         const buzzer = audioCtx.createOscillator();
         buzzers.push(buzzer);
         buzzer.setPeriodicWave(buzz);
-        buzzer.connect(buzzPreGain);
         buzzer.start();
         buzzer.frequency.setValueAtTime(0, audioCtx.currentTime);
+        const buzzGain = audioCtx.createGain();
+        buzzGain.gain.setValueAtTime(0, audioCtx.currentTime);
+        buzzGains.push(buzzGain);
+        buzzer.connect(buzzGain).connect(buzzPreGain);
     }
 
     PITCHES = {
@@ -597,6 +622,16 @@
             } else {
                 buzzer.frequency.setValueAtTime(freq * mainChord[i], audioCtx.currentTime);
             }
+            const buzzGain = buzzGains[i];
+            buzzGain.gain.cancelScheduledValues(audioCtx.currentTime);
+            buzzGain.gain.setValueAtTime(buzzGain.gain.value, audioCtx.currentTime);
+            buzzGain.gain.linearRampToValueAtTime(1, audioCtx.currentTime + 0.002);
+        }
+        for (let i = mainChord.length; i < buzzers.length; ++i) {
+            const buzzGain = buzzGains[i];
+            buzzGain.gain.cancelScheduledValues(audioCtx.currentTime);
+            buzzGain.gain.setValueAtTime(buzzGain.gain.value, audioCtx.currentTime);
+            buzzGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.002);
         }
 
         let preVal, postVal;
