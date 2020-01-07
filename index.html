@@ -6,9 +6,11 @@
 <body style="margin:0;">
 <canvas id="main-canvas" width="1920" height="1076"></canvas>
 <script type="text/javascript">
+    // XXX: This is very organically grown code. Things are mismashed together and everything is in global scope.
+    // Have fun deciphering! ^_^*
+
     // TODO: Slowly slide into distortion when a note is playing and shift or capslock is pressed
     // XXX: This requires another set of buzzers to change the waveform.
-    // TODO: Allow polyphonic playing when not hovering over a chord.
     let base = Math.pow(2, 1/12);
     const EPSILON = 1e-6;
     let maxMultiplier = 10;
@@ -25,7 +27,7 @@
         if (e.code.startsWith('Numpad')) {
             let value = parseInt(e.code[6]);
             if (!isNaN(value)) {
-                maxMultiplier = 10 + value;
+                maxMultiplier = 5 + value;
                 setMainChord();
             }
         }
@@ -126,14 +128,18 @@
     const rightBoxCount = 12;
     let prevX = 4;
     let prevY = 7;
+    let polyMode = false;
     function setMainChord() {
-        let mainChordUnfiddled;
-        if (prevX == prevY) {
-            mainChordUnfiddled = [1, Math.pow(base, prevX)];
-        } else {
-            mainChordUnfiddled = [1, Math.pow(base, prevX), Math.pow(base, prevY)];
+        if (!polyMode) {
+            if (prevX == prevY) {
+                mainChord = [1, Math.pow(base, prevX)];
+            } else {
+                mainChord = [1, Math.pow(base, prevX), Math.pow(base, prevY)];
+            }
+        } else if (mainChord.length) {
+            mainChord = mainChord.map(i => i / mainChord[0]);
         }
-        mainChord = fiddleIntervals(mainChordUnfiddled);
+        mainChord = fiddleIntervals(mainChord);
         mainChord = mainChord.map(i => i * Math.exp((Math.random()-0.5)*randomLevel));
         mainChord = nudgeIntervals(mainChord);
     }
@@ -144,6 +150,7 @@
             return;
         }
         if (e.pageX > 1080) {
+            polyMode = false;
             let x = (e.pageX - leftSideWidth - 4) / (1920 - 1080);
             x = Math.floor(rightBoxCount*x) + intervalOffset1 + 1;
             let y = e.pageY / (1920 - 1080);
@@ -153,6 +160,8 @@
                 prevY = y;
                 setMainChord();
             }
+        } else {
+            polyMode = true;
         }
     });
 
@@ -342,11 +351,20 @@
         const a = getIntervalNameAndColor(prevX);
         const b = getIntervalNameAndColor(prevY);
         let x = 20;
-        x += textOnWhite("Chord: ", x, 40);
-        x += textOnWhite(a.name + " ", x, 40, a.color);
-        x += textOnWhite(b.name, x, 40, b.color);
-        textOnWhite("Name: " + getChordName([prevX, prevY]), 20, 80);
-        textOnWhite("Just intonation: " + mainChord.map(Math.round).join(":"), 20, 120);
+        if (polyMode) {
+            x += textOnWhite("Polyphonic mode", x, 40);
+            textOnWhite("Just intonation", 20, 80);
+        } else {
+            x += textOnWhite("Chord: ", x, 40);
+            x += textOnWhite(a.name + " ", x, 40, a.color);
+            x += textOnWhite(b.name, x, 40, b.color);
+            textOnWhite("Name: " + getChordName([prevX, prevY]), 20, 80);
+        }
+        if (polyMode) {
+            textOnWhite(mainChord.map(Math.round).join(":"), 20, 120);
+        } else {
+            textOnWhite("Just intonation: " + mainChord.map(Math.round).join(":"), 20, 120);
+        }
         let error = pureError(mainChord);
         textOnWhite("Error: " + Math.round(error * 100000), 20, 160);
 
@@ -360,7 +378,7 @@
     function drawChord(chord, arcLength, polarOffset, offsets, drawSum) {
         const mu = arcLength / accuracy;
 
-        const scale = 0.14 / (chord.length + drawSum);
+        const scale = 0.55 / (4 + 2.2*chord.length + drawSum * (2.2 + 3));
         let n = 0;
         for (let interval of chord) {
             ctx.beginPath();
@@ -381,7 +399,7 @@
             n += 1;
         }
 
-        if (drawSum) {
+        if (drawSum && chord.length) {
             ctx.beginPath();
             for (let i = 0; i < accuracy + 1; i++) {
                 const theta = i * mu;
@@ -506,6 +524,9 @@
     }
 
     function findBaseFrequency(note) {
+        if (polyMode) {
+            return 110 * Math.pow(base, note) / mainChord[0];
+        }
         let product = 1;
         for (let interval of mainChord) {
             product *= interval;
@@ -592,6 +613,8 @@
 
     let pressedKeys = [];
     let firstKeyPress = true;
+    // TODO: Make poly mode sound consistent by using the same buzzer for a note.
+    // let polyBuzzerRoles = [...Array(MAX_POLYPHONY).keys()];
 
     function setBuzzers(e) {
         setMainChord();
@@ -618,7 +641,7 @@
             let time;
             if (pressedKeys.length > 1) {
                 buzzer.frequency.setValueAtTime(buzzer.frequency.value, audioCtx.currentTime);
-                buzzer.frequency.exponentialRampToValueAtTime(freq * mainChord[i], audioCtx.currentTime + 0.025);
+                buzzer.frequency.exponentialRampToValueAtTime(freq * mainChord[i], audioCtx.currentTime + 0.025 * !polyMode);
             } else {
                 buzzer.frequency.setValueAtTime(freq * mainChord[i], audioCtx.currentTime);
             }
@@ -655,12 +678,23 @@
         buzzPostGain.gain.linearRampToValueAtTime(postGain, audioCtx.currentTime + 0.01);
     }
 
+    function usePolyMode() {
+        mainChord = [];
+        for (let code of pressedKeys) {
+            mainChord.push(Math.pow(base, PITCHES[code]));
+            if (mainChord.length == MAX_POLYPHONY) {
+                break;
+            }
+        }
+    }
+
     document.addEventListener('keydown', e => {
         audioCtx.resume();  // Thanks Chrome!
 
         console.log(e);
 
         if (e.code == 'Backquote') {
+            e.preventDefault();
             oscillator.frequency.cancelScheduledValues(audioCtx.currentTime);
             gain.gain.cancelScheduledValues(audioCtx.currentTime);
 
@@ -678,10 +712,15 @@
         }
 
         if (PITCHES[e.code] !== undefined) {
+            e.preventDefault();
             if (pressedKeys.includes(e.code)) {
                 return;
             }
             pressedKeys.unshift(e.code);
+
+            if (polyMode) {
+                usePolyMode();
+            }
 
             setBuzzers(e);
         }
@@ -699,12 +738,16 @@
             let isMostRecent;
             if (pressedKeys.includes(e.code)) {
                 isMostRecent = (pressedKeys[0] == e.code);
-                pressedKeys.splice(pressedKeys.indexOf(e.code), 1);
+                const keyIndex = pressedKeys.indexOf(e.code)
+                pressedKeys.splice(keyIndex, 1);
             }
             if (pressedKeys.length) {
-                if (isMostRecent) {
+                if (isMostRecent || polyMode) {
                     const spoofedEvent = {code: pressedKeys[0], shiftKey: e.shiftKey};
                     spoofedEvent.getModifierState = (modifier) => {return e.getModifierState(modifier)};
+                    if (polyMode) {
+                        usePolyMode();
+                    }
                     setBuzzers(spoofedEvent);
                 }
             }
@@ -712,6 +755,10 @@
                 buzzPreGain.gain.cancelScheduledValues(audioCtx.currentTime);
                 buzzPreGain.gain.setValueAtTime(buzzPreGain.gain.value, audioCtx.currentTime);
                 buzzPreGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.01);
+                if (polyMode) {
+                    usePolyMode();
+                    setMainChord();
+                }
             }
         }
 
