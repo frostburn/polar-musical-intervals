@@ -665,14 +665,16 @@
             gain.gain.cancelScheduledValues(audioCtx.currentTime);
 
             const freq = findBaseFrequency() * 2;
-            oscillator.frequency.setValueAtTime(freq * mainChord[0], audioCtx.currentTime);
-            oscillator.frequency.setValueAtTime(freq * mainChord[1], audioCtx.currentTime + 1);
-            oscillator.frequency.setValueAtTime(freq * mainChord[2], audioCtx.currentTime + 2);
+            let time = audioCtx.currentTime;
+            for (let interval of mainChord) {
+                oscillator.frequency.setValueAtTime(freq * interval, time);
+                time += 1;
+            }
 
             gain.gain.setValueAtTime(0, audioCtx.currentTime);
             gain.gain.linearRampToValueAtTime(0.4, audioCtx.currentTime + 0.01);
-            gain.gain.setValueAtTime(0.4, audioCtx.currentTime + 3);
-            gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 3.02);
+            gain.gain.setValueAtTime(0.4, time);
+            gain.gain.linearRampToValueAtTime(0, time + 0.02);
         }
 
         if (PITCHES[e.code] !== undefined) {
