@@ -20,6 +20,7 @@
     let intervalOffset1 = 0;
     let intervalOffset2 = 0;
     let interactive = true;
+    let fourthInterval = 0;
 
     let mainChord;
 
@@ -83,6 +84,16 @@
             }
             setMainChord();
         }
+        if (e.code == 'NumpadEnter') {
+            fourthInterval += 1;
+            setMainChord();
+        }
+        if (e.code == 'NumpadDecimal') {
+            if (fourthInterval > 0) {
+                fourthInterval -= 1;
+                setMainChord();
+            }
+        }
     });
 
     document.addEventListener('mousedown', (e) => {
@@ -131,10 +142,12 @@
     let polyMode = false;
     function setMainChord() {
         if (!polyMode) {
-            if (prevX == prevY) {
-                mainChord = [1, Math.pow(base, prevX)];
-            } else {
-                mainChord = [1, Math.pow(base, prevX), Math.pow(base, prevY)];
+            mainChord = [1, Math.pow(base, prevX)];
+            if (prevX != prevY){
+                mainChord.push(Math.pow(base, prevY));
+            }
+            if (fourthInterval > 0 && fourthInterval != prevX && fourthInterval != prevY) {
+                mainChord.push(Math.pow(base, fourthInterval));
             }
         } else if (mainChord.length) {
             mainChord = mainChord.map(i => i / mainChord[0]);
@@ -198,7 +211,7 @@
         const key = x + "," + y;
         let offsets = boxOffsets.get(key);
         if (offsets === undefined) {
-            offsets = [0, 0, 0];
+            offsets = [0, 0, 0, 0];
             boxOffsets.set(key, offsets);
         }
         return offsets;
@@ -350,6 +363,7 @@
         ctx.fillRect(0, mainCanvas.height, 300, -130);
         const a = getIntervalNameAndColor(prevX);
         const b = getIntervalNameAndColor(prevY);
+        const c = getIntervalNameAndColor(fourthInterval);
         let x = 20;
         if (polyMode) {
             x += textOnWhite("Polyphonic mode", x, 40);
@@ -357,8 +371,13 @@
         } else {
             x += textOnWhite("Chord: ", x, 40);
             x += textOnWhite(a.name + " ", x, 40, a.color);
-            x += textOnWhite(b.name, x, 40, b.color);
-            textOnWhite("Name: " + getChordName([prevX, prevY]), 20, 80);
+            if (prevY != prevX) {
+                x += textOnWhite(b.name + " ", x, 40, b.color);
+            }
+            if (fourthInterval > 0 && fourthInterval != prevX && fourthInterval != prevY) {
+                x += textOnWhite(c.name, x, 40, c.color);
+            }
+            textOnWhite("Name: " + getChordName([prevX, prevY, fourthInterval]), 20, 80);
         }
         if (polyMode) {
             textOnWhite(mainChord.map(Math.round).join(":"), 20, 120);
@@ -457,12 +476,14 @@
                     const b = x + 1 + intervalOffset1;
                     const c = y + 1 + intervalOffset2;
                     rightSideBox(x, y, 12);
-                    let chord;
-                    if (b == c) {
-                        chord = fiddleIntervals([1, Math.pow(base, b)]);
-                    } else {
-                        chord = fiddleIntervals([1, Math.pow(base, b), Math.pow(base, c)]);
+                    let chord = [1, Math.pow(base, b)];
+                    if (c != b) {
+                        chord.push(Math.pow(base, c));
                     }
+                    if (fourthInterval > 0 && fourthInterval != b && fourthInterval != c) {
+                        chord.push(Math.pow(base, fourthInterval));
+                    }
+                    chord = fiddleIntervals(chord);
                     const offsets = getBoxOffsets(x, y);
                     drawChord(chord, boxArcLength, boxPolarOffset, offsets, false);
                     ctx.restore();
@@ -649,7 +670,6 @@
             // }
             const buzzer = buzzers[i];
             buzzer.setPeriodicWave(wave);
-            console.log(buzzer.frequency.value);
             buzzer.frequency.cancelScheduledValues(audioCtx.currentTime);
             let time;
             if (pressedKeys.length > 1) {
