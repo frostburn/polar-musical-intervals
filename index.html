@@ -251,12 +251,12 @@
         "2,7": "sus2",
         "3,6": "°",
         "3,7": "m",
-        "3,10": "m7",
-        "3,11": "mM7",
+        "3,10": "m7~5",
+        "3,11": "mM7~5",
         "4,7": "M",
         "4,8": "+",
-        "4,10": "7",
-        "4,11": "M7",
+        "4,10": "7~5",
+        "4,11": "M7~5",
         "5,7": "sus4",
         "7,7": "5",
     }
@@ -525,7 +525,7 @@
 
     function findBaseFrequency(note) {
         if (polyMode) {
-            return 110 * Math.pow(base, note) / mainChord[0];
+            return 110 * Math.pow(base, note) / mainChord[mainChord.length - 1];
         }
         let product = 1;
         for (let interval of mainChord) {
@@ -613,10 +613,9 @@
 
     let pressedKeys = [];
     let firstKeyPress = true;
-    // TODO: Make poly mode sound consistent by using the same buzzer for a note.
-    // let polyBuzzerRoles = [...Array(MAX_POLYPHONY).keys()];
+    // let polyBuzzerRoles = Array(MAX_POLYPHONY);  // XXX: This feels dumb.
 
-    function setBuzzers(e) {
+    function setBuzzers(e, fadeIn=false) {
         setMainChord();
         let freq = findBaseFrequency(PITCHES[e.code]);
         let preGain, postGain, wave;
@@ -635,26 +634,40 @@
         }
 
         for (let i = 0; i < mainChord.length; ++i) {
+        //for (let j = 0; j < MAX_POLYPHONY; ++j) {
+            // let i;
+            // if (polyMode) {
+            //     i = polyBuzzerRoles[j];
+            //     if (i === undefined) {
+            //         continue;
+            //     }
+            // } else {
+            //     i = j;
+            //     if (i >= mainChord.length) {
+            //         break;
+            //     }
+            // }
             const buzzer = buzzers[i];
             buzzer.setPeriodicWave(wave);
+            console.log(buzzer.frequency.value);
             buzzer.frequency.cancelScheduledValues(audioCtx.currentTime);
             let time;
             if (pressedKeys.length > 1) {
                 buzzer.frequency.setValueAtTime(buzzer.frequency.value, audioCtx.currentTime);
-                buzzer.frequency.exponentialRampToValueAtTime(freq * mainChord[i], audioCtx.currentTime + 0.025 * !polyMode);
+                buzzer.frequency.exponentialRampToValueAtTime(freq * mainChord[i], audioCtx.currentTime + 0.005 + 0.02 * !polyMode);
             } else {
                 buzzer.frequency.setValueAtTime(freq * mainChord[i], audioCtx.currentTime);
             }
             const buzzGain = buzzGains[i];
             buzzGain.gain.cancelScheduledValues(audioCtx.currentTime);
             buzzGain.gain.setValueAtTime(buzzGain.gain.value, audioCtx.currentTime);
-            buzzGain.gain.linearRampToValueAtTime(1, audioCtx.currentTime + 0.002);
+            buzzGain.gain.linearRampToValueAtTime(1, audioCtx.currentTime + 0.01);
         }
         for (let i = mainChord.length; i < buzzers.length; ++i) {
             const buzzGain = buzzGains[i];
             buzzGain.gain.cancelScheduledValues(audioCtx.currentTime);
             buzzGain.gain.setValueAtTime(buzzGain.gain.value, audioCtx.currentTime);
-            buzzGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.002);
+            buzzGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.01);
         }
 
         let preVal, postVal;
@@ -669,19 +682,21 @@
 
         buzzPreGain.gain.cancelScheduledValues(audioCtx.currentTime);
         buzzPreGain.gain.setValueAtTime(preVal, audioCtx.currentTime);
-        buzzPreGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.005);
-        buzzPreGain.gain.linearRampToValueAtTime(preGain, audioCtx.currentTime + 0.01);
 
         buzzPostGain.gain.cancelScheduledValues(audioCtx.currentTime);
         buzzPostGain.gain.setValueAtTime(postVal, audioCtx.currentTime);
-        buzzPostGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.005);
+        if (fadeIn) {
+            buzzPreGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.005);
+            buzzPostGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.005);
+        }
+        buzzPreGain.gain.linearRampToValueAtTime(preGain, audioCtx.currentTime + 0.01);
         buzzPostGain.gain.linearRampToValueAtTime(postGain, audioCtx.currentTime + 0.01);
     }
 
     function usePolyMode() {
         mainChord = [];
-        for (let code of pressedKeys) {
-            mainChord.push(Math.pow(base, PITCHES[code]));
+        for (let i = 0; i < pressedKeys.length; ++i) {
+            mainChord.unshift(Math.pow(base, PITCHES[pressedKeys[i]]));
             if (mainChord.length == MAX_POLYPHONY) {
                 break;
             }
@@ -720,9 +735,22 @@
 
             if (polyMode) {
                 usePolyMode();
+                // for (let i = 0; i < MAX_POLYPHONY; ++i) {
+                //     if (polyBuzzerRoles[i] !== undefined) {
+                //         polyBuzzerRoles[i] += 1;
+                //     }
+                // }
+                // for (let i = 0; i < MAX_POLYPHONY; ++i) {
+                //     if (polyBuzzerRoles[i] === undefined) {
+                //         polyBuzzerRoles[i] = 0;
+                //         break;
+                //     }
+                // }
+                // console.log(polyBuzzerRoles);
+                // console.log(mainChord);
             }
 
-            setBuzzers(e);
+            setBuzzers(e, pressedKeys.length==1);
         }
 
         // TODO: Fix gain sync issues.
@@ -740,6 +768,17 @@
                 isMostRecent = (pressedKeys[0] == e.code);
                 const keyIndex = pressedKeys.indexOf(e.code)
                 pressedKeys.splice(keyIndex, 1);
+                // if (polyMode) {
+                //     for (let i = 0; i < MAX_POLYPHONY; ++i) {
+                //         if (polyBuzzerRoles[i] === keyIndex) {
+                //             polyBuzzerRoles[i] = undefined;
+                //         }
+                //         if (polyBuzzerRoles[i] > keyIndex) {
+                //             polyBuzzerRoles[i] -= 1;
+                //         }
+                //     }
+                //     console.log(polyBuzzerRoles);
+                // }
             }
             if (pressedKeys.length) {
                 if (isMostRecent || polyMode) {
@@ -758,6 +797,7 @@
                 if (polyMode) {
                     usePolyMode();
                     setMainChord();
+                    // polyBuzzerRoles.fill(undefined);
                 }
             }
         }
